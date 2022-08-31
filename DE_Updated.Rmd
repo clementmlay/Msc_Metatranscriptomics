@@ -1,0 +1,451 @@
+---
+title: "metatranscriptomics"
+author: "clement mlay"
+date: '2022-04-22'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache= TRUE)
+```
+
+```{r loading packages}
+library( DESeq2)
+library(ggplot2)
+library(edgeR)
+library(ComplexHeatmap)
+```
+
+```{r Loading data}
+count_inf <- read.table("/Users/clementmlay/Desktop/msc_project/DGE/salmon2/trans_matrix.TPM.not_cross_norm.counts_by_min_TPM", header = T)
+mydata <- read.table("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data/salmon.isoform.counts.matrix", header = T)
+metadata <- read.table("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data/metadata1")
+```
+
+```{r explore counts data}
+plot(count_inf, xlim=c(-100, 0), ylim=c(0,100000))
+```
+
+
+```{r comfirm datasets if are in correct order for DESEq2}
+all(rownames(metadata) %in% colnames(mydata))
+all(rownames(metadata) == colnames(mydata))
+```
+
+
+```{r generate a DESeq dataset}
+library( "DESeq2" )
+dds <- DESeqDataSetFromMatrix(countData = round(mydata),
+                              colData = metadata,
+                              design = ~ condition)
+```
+
+```{r}
+dds_counts <- assay(dds)
+```
+
+```{r PCA plot using vsd transformed data}
+vsd <- varianceStabilizingTransformation(dds)
+PCA <- plotPCA(vsd, intgroup = "condition") 
+PCA
+```
+
+```{r see a specified design}
+design(dds)
+```
+
+```{r Filter low expressed Transcripts if the row sum is less than 10}
+keep_DESeq <- rowSums(cpm(dds_counts)>0.5) >= 5
+dds <- dds[keep_DESeq,]
+```
+
+```{r}
+table(keep_DESeq)
+```
+
+
+```{r set a refference levelfor comparison}
+#dds$condition <- relevel(dds$condition, ref = "control")
+```
+
+
+```{r Run differential expression analysis}
+dds <- DESeq(dds)
+```
+
+```{r normalize reads}
+# count to take into account library size set normalization = T
+normCount <- counts(dds, normalized = T)
+#summary(dds)
+```
+
+```{r see the compared levels (this help to extract results)}
+resultsNames(dds)
+```
+
+```{r extract results from DESeq analysis, comparing two levels with significance level of 0.05}
+contrl_vs_exploited <- results(dds, contrast = c("condition", "exploited", "control"), alpha = 0.05 )
+contrl_vs_polluted <- results(dds, contrast = c("condition", "polluted", "control"), alpha = 0.05)
+```
+
+```{r summary of the results to show conditions in each results}
+contrl_vs_exploited
+contrl_vs_polluted
+```
+
+
+```{r summary of the results extracted}
+summary(contrl_vs_exploited)
+summary(contrl_vs_polluted)
+```
+
+
+
+```{r writte ordered results in a csv files (for future use)}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+write.csv(contrl_vs_exploited, "contrl_vs_exploited_befor")
+write.csv(contrl_vs_polluted, "contrl_vs_polluted_before")
+```
+
+
+```{r order results based on p values}
+contrl_vs_exploited <- contrl_vs_exploited[order(contrl_vs_exploited$padj),]
+contrl_vs_polluted <- contrl_vs_polluted[order(contrl_vs_polluted$padj),]
+```
+
+
+```{r Load / Read the results files}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+contrl_vs_exploited_d <- read.csv("contrl_vs_exploited", header = T)
+contrl_vs_polluted_d <- read.csv("contrl_vs_polluted", header = T)
+```
+
+```{r order results files loaded based on p values}
+contrl_vs_exploited_d <- contrl_vs_exploited_d[order(contrl_vs_exploited_d$padj),]
+contrl_vs_polluted_d <- contrl_vs_polluted_d[order(contrl_vs_polluted_d$padj),]
+```
+
+```{r Remove rows with nas}
+library(tidyr)
+contrl_vs_exploited_d <- contrl_vs_exploited_d %>% drop_na()
+contrl_vs_polluted_d <- contrl_vs_polluted_d %>% drop_na()
+```
+
+```{r}
+#sig_contrl_vs_exploited_d <- subset(contrl_vs_exploited_d, abs(log2FoldChange) > 2) 
+#sig_contrl_vs_polluted_d <- subset(contrl_vs_polluted_d, abs(log2FoldChange) > 2)
+sig_contrl_vs_exploited <- subset(contrl_vs_exploited, padj <= 0.05) 
+sig_contrl_vs_polluted <- subset(contrl_vs_polluted, padj <= 0.05)
+#comb <- merge(x = sig_contrl_vs_exploited_d, y = sig_contrl_vs_polluted_d, by = "X", all = TRUE)
+```
+
+```{r}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+#comb <- comb[,1:8]
+#colnames(comb)
+#comb2 <- comb[,c("X","baseMean.x","log2FoldChange.x","lfcSE.x","stat.x","pvalue.x","padj.x")]
+#colnames(comb2) <- c(" ","baseMean","log2FoldChange","lfcSE","stat","pvalue","padj")
+#write.csv(comb2, file = "DESeq_sig_transcripts")
+deseq_sig <- read.csv("DESeq_sig_transcripts")
+```
+
+```{r}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+#deseq_sig <- read.csv("DESeq_sig_transcripts")
+deseq_sig <- deseq_sig[,2:8]
+rownames(deseq_sig) <- deseq_sig$X.
+deseq_sig <- deseq_sig[,2:7]
+```
+
+```{r only sig counts}
+#DESeq_sig_counts <- dds_counts[rownames(deseq_sig),]
+DESeq_sig_counts_data <- cpm(DESeq_sig_counts, normalized.lib.size=TRUE)
+```
+
+```{r DESEQ heat map}
+Heatmap(t(scale(t(normCount))),
+        show_column_dend = FALSE,show_row_dend = FALSE,
+        cluster_rows = FALSE,cluster_columns = FALSE,km=2,
+        column_split = metadata$condition, show_row_names = FALSE,
+        show_column_names = T)
+```
+
+
+```{r}
+# arrange the csv files
+rownames(sig_contrl_vs_exploited) <- sig_contrl_vs_exploited$X
+rownames(sig_contrl_vs_polluted) <- sig_contrl_vs_polluted$X
+sig_contrl_vs_exploited <- sig_contrl_vs_exploited[,2:7]
+sig_contrl_vs_polluted <- sig_contrl_vs_polluted[,2:7]
+```
+
+```{r}
+# create a list of significant genes 
+list_sig_contrl_vs_exploited_d <- as.list(rownames(sig_contrl_vs_exploited_d))
+list_sig_contrl_vs_polluted_d <- as.list(rownames(sig_contrl_vs_polluted_d))
+```
+
+```{r}
+# write a csv file containing signifivant differentialy transcripts
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+lapply(list_sig_contrl_vs_exploited_d, write, "list_sig_contrl_vs_exploited_d.txt", append=TRUE, ncolumns=1000)
+lapply(list_sig_contrl_vs_polluted_d, write, "list_sig_contrl_vs_polluted_d.txt", append=TRUE, ncolumns=1000)
+```
+
+
+```{r}
+#Write a list of significant transcripts to a text file
+#setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+write.csv(sig_contrl_vs_exploited, "sig_contrl_vs_exploited")
+write.csv(sig_contrl_vs_polluted, "sig_contrl_vs_polluted")
+sig_contrl_vs_exploited <- read.csv("sig_contrl_vs_exploited")
+sig_contrl_vs_polluted <- read.csv("sig_contrl_vs_exploited")
+
+```
+
+
+```{r log fold change shrinkage, shrinkage of effect size}
+# to do
+```
+
+
+```{r MA plot for contrl_vs_exploited results using plotMA fuction}
+plotMA(contrl_vs_exploited)
+```
+
+```{r MA plot contrl_vs_polluted results using plotMA function}
+plotMA(contrl_vs_polluted)
+```
+
+```{r regulated transcripts}
+# Obtain up and down regulated transcripts foldchange threshold = 2
+sigUpControlvsExplo <-  subset(contrl_vs_exploited, log2FoldChange > 2)
+sigDownControlvsExplo <- subset(contrl_vs_exploited, log2FoldChange < -2)
+sigUpControlvsPolutd <- subset(contrl_vs_polluted, log2FoldChange > 2)
+sigDownControlvsPolutd <- subset(contrl_vs_polluted, log2FoldChange < -2)
+```
+
+
+```{r make sure that up and down regulated transcripts consist of p value less than 0.05}
+sigUpControlvsExplo <-  subset(sigUpControlvsExplo, padj <= 0.05)
+sigDownControlvsExplo <- subset(sigDownControlvsExplo, padj <= 0.05)
+sigUpControlvsPolutd <- subset(sigUpControlvsPolutd, padj <= 0.05)
+sigDownControlvsPolutd <- subset(sigDownControlvsPolutd, padj <= 0.05)
+```
+
+```{r}
+dim(sigUpControlvsExplo)
+dim(sigDownControlvsExplo)
+dim(sigUpControlvsPolutd)
+dim(sigDownControlvsPolutd)
+
+```
+
+
+```{r writting files to save up and down regulated transcripts}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+write.csv(sigUpControlvsExplo, "sigUpControlvsExplo")
+write.csv(sigDownControlvsExplo, "sigDownControlvsExplo")
+write.csv(sigUpControlvsPolutd, "sigUpControlvsPolutd")
+write.csv(sigDownControlvsPolutd, "sigDownControlvsPolutd")
+```
+
+```{r}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data/results")
+DownCvE <- read.csv("sigDownControlvsExplo")
+DownCvP <- read.csv("sigDownControlvsPolutd")
+DownCvE_ID <- unique(DownCvE$X)
+DownCvP_ID <- unique(DownCvP$X)
+```
+
+```{r}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data/results")
+write.csv(DownCvE_ID, file = "DownCvE_ID")
+write.csv(DownCvP_ID, file = "DownCvP_ID")
+```
+
+
+```{r read / load up and down regulated transcripts files}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+UpCvE <- read.csv("sigUpControlvsExplo", header = T)
+DownCvE <- read.csv("sigDownControlvsExplo", header = T)
+UpCvP <- read.csv("sigUpControlvsPolutd", header = T)
+DownCvP <- read.csv("sigDownControlvsPolutd", header = T)
+#UpCvE <- UpCvE[,3:9]
+#DownCvE <- DownCvE[,3:9]
+#UpCvP <- UpCvP[,3:9]
+#DownCvP <- DownCvP[,3:9]
+#colnames(UpCvE) <- c("trinity_ID","baseMean","logFoldChange","lfcSE","stat","pvalue","padj")
+#colnames(DownCvE) <- c("trinity_ID","baseMean","logFoldChange","lfcSE","stat","pvalue","padj")
+#colnames(UpCvP) <- c("trinity_ID","baseMean","logFoldChange","lfcSE","stat","pvalue","padj")
+#colnames(DownCvP) <- c("trinity_ID","baseMean","logFoldChange","lfcSE","stat","pvalue","padj")
+```
+
+```{r create a list of up and down regulated Transcripts for venn diagram}
+listUpCvE <- as.list(UpCvE$X) 
+listDownCvE <-as.list(DownCvE$X)
+listUpCvP <- as.list(UpCvP$X)
+listDownCvP <-as.list(UpCvP$X)
+```
+
+```{r}
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+UpCvE <- subset(c_vs_e, c_vs_e$log2FoldChange > 2)
+UpCvE <- subset(UpCvE, UpCvE$padj <= 0.05)
+DownCvE <- subset(c_vs_e, c_vs_e$log2FoldChange < -2)
+DownCvE <- subset(DownCvE, DownCvE$padj <= 0.05)
+UpCvP <- subset(c_vs_p, c_vs_p$log2FoldChange > 2)
+UpCvP <- subset(UpCvP, UpCvP$padj <= 0.05)
+DownCvP <- subset(c_vs_p, c_vs_p$log2FoldChange < -2)
+DownCvP <- subset(DownCvP, DownCvP$padj <= 0.05)
+```
+
+
+```{r draw a venn diagram to obtain transcripts overlap for control versus exploited and control vs polluted}
+# FOR UP REGULATED TRANSCRIPTS
+library(ggvenn)
+comparison_list_up <- list("exploited" = listUpCvE,
+                           "polluted" = listUpCvP)
+
+ggvenn(comparison_list_up, stroke_size = 0.1, set_name_size = 4, show_percentage = T, digits=1,
+     fill_alpha = 0.4,text_size = 3) + ggtitle("Up Regulated Transcripts")
+
+```
+
+```{r ven diagram to obtain transcripts overlap}
+# FOR DOWN REGULATED GENES
+library(ggvenn)
+comparison_list_down <- list("exploited" = listDownCvE,
+                           "polluted" = listDownCvP)
+
+ggvenn(comparison_list_down, stroke_size = 0.1, set_name_size = 4, show_percentage = T, digits=1,
+     fill_alpha = 0.4,text_size = 3) + ggtitle("Down Regulated Transcripts")
+```
+
+
+```{r plotting MA using ggplot FOR CONTROL VS EXPLOITED}
+library(ggplot2)
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+#c_vs_e <- sigDownControlvsExplo
+c_vs_e <- read.csv("contrl_vs_exploited_befor")
+#c_vs_p <- contrl_vs_polluted
+c_vs_p <- read.csv("contrl_vs_polluted_before")
+
+c_vs_e$sig <- ifelse(c_vs_e$padj <= 0.05, "<0.05", ">0.05")
+c_vs_p$sig <- ifelse(c_vs_p$padj <= 0.05, "<0.05", ">0.05")
+
+
+
+ggplot(na.omit(c_vs_e), aes(x = log10(baseMean), y = log2FoldChange, color = sig)) +
+  geom_point() + ggtitle("Control vs Exploited")
+
+```
+
+
+```{r plotting MA using ggplot FOR CONTROL VS POLLUTED}
+library(ggplot2)
+ggplot(na.omit(c_vs_p), aes(x = log10(baseMean), y = log2FoldChange, color = sig)) +
+  geom_point() + ggtitle("Control vs Polluted")
+
+```
+
+```{r prepare data for volcano plots}
+cve <- c_vs_e
+cvp <- c_vs_p
+cve$sig <- ifelse(cve$padj <= 0.05, "<0.05", ">0.05")
+cvp$sig <- ifelse(cvp$padj <= 0.05, "<0.05", ">0.05")
+
+```
+
+```{r Volcano Plot FOR CONTROL VS EXPLOITED}
+ggplot(na.omit(cve), aes(x = log2FoldChange, y = -log(padj), color = sig)) + geom_point() + ggtitle("Control vs Exploited")
+```
+
+```{r Volcano Plot FOR CONTROL VS POLLUTED}
+# negativelog convert negative values to positive
+ggplot(na.omit(cvp), aes(x = log2FoldChange, y = -log(padj), color = sig)) + geom_point() + ggtitle("Control vs Polluted")
+```
+
+
+```{r Prepare data for heatmap }
+cont_vs_ex_top <- subset(contrl_vs_exploited_d , padj <= 0.05)
+cont_vs_pol_top <- subset(contrl_vs_polluted_d , padj <= 0.05)
+```
+
+```{r}
+# generate a heatmap
+Heatmap(t(scale(t(sig_data))),
+        show_column_dend = FALSE,show_row_dend = FALSE,
+        cluster_rows = FALSE,cluster_columns = FALSE,km=2,
+        column_split = Kmeans_met$condition, show_row_names = FALSE,
+        show_column_names = T)
+```
+
+
+```{r Data preparation for heatmap}
+cont_vs_ex_top <- subset(cont_vs_ex_top, abs(log2FoldChange) > 10)
+cont_vs_pol_top <- subset(cont_vs_pol_top , abs(log2FoldChange) > 10)
+cont_vs_ex_top <- subset(cont_vs_ex_top, baseMean > 50)
+cont_vs_pol_top <- subset(cont_vs_pol_top , baseMean > 50)
+```
+
+
+```{r heat map data preparation cont..}
+cont_vs_ex_top <- cont_vs_ex_top[order(cont_vs_ex_top$log2FoldChange, decreasing = T), ]
+cont_vs_pol_top <- cont_vs_pol_top[order(cont_vs_pol_top$log2FoldChange, decreasing = T), ]
+```
+
+
+
+```{r heatmap for control vs exploited preparation }
+setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+# filter deseq results to have significant transcript only
+class(contrl_vs_exploited)
+colnames(contrl_vs_exploited)
+sig <- subset(contrl_vs_exploited, padj <= 0.05)
+allsig <- merge(normCount, sig, by = 0)
+allsig<- subset(allsig, padj <= 0.05)
+allsig<- subset(allsig, abs(log2FoldChange) > 10)
+allsig<- subset(allsig,  baseMean > 50)
+allsig <- allsig[order(allsig$log2FoldChange, decreasing = T), ]
+rownames(allsig) <- allsig$Row.names
+allsig <- allsig[,2:25]
+sigCounts <- allsig[,1:18]
+```
+
+```{r heatmap for control vs exploited}
+library(pheatmap)
+pheatmap(log2(sigCounts + 1), scale = 'row', show_rownames = F, treeheight_row = 0)
+
+```
+
+
+```{r heatmap for control vs polluted preparation }
+#setwd("/Users/clementmlay/Desktop/msc_project/DGE/DEanalysis/data")
+# filter deseq results to have significant transcript only
+class(contrl_vs_polluted)
+colnames(contrl_vs_polluted)
+sigP <- subset(contrl_vs_polluted, padj <= 0.05)
+allsigP <- merge(normCount, sigP, by = 0)
+
+```
+
+```{r heatmap for control vs polluted preparation cont..}
+allsigP<- subset(allsigP, padj <= 0.05)
+allsigP<- subset(allsigP, abs(log2FoldChange) > 10)
+allsigP<- subset(allsigP,  baseMean > 50)
+allsigP <- allsigP[order(allsigP$log2FoldChange, decreasing = T), ]
+rownames(allsigP) <- allsigP$Row.names
+allsigP <- allsigP[,2:25]
+#allsig[,2:19]
+sigCountsP <- allsigP[,1:18]
+```
+
+```{r heatmap for control vs polluted}
+library(pheatmap)
+pheatmap(log2(sigCountsP + 1), scale = 'row', show_rownames = FALSE, treeheight_row = 0)
+```
+
+
