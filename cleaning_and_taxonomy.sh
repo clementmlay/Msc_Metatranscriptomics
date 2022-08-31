@@ -38,7 +38,7 @@ fastqc ./clean_data/*.trimmed_fastq.gz -o ../fastqc_results/after_trimming
 
 ## Removing host contaminants
 
-samplenames={ls ../results/fastp_results | cut -d _ -f1,2,3}
+#samplenames={ls ../results/fastp_results | cut -d _ -f1,2,3}
 
 for sampleid in $samplenames
 
@@ -50,7 +50,7 @@ done
 
 ## taxinomoic classification
 
-samplenames={ls ./contaminants_free | cut -d _ -f1,2,3}
+#samplenames={ls ./contaminants_free | cut -d _ -f1,2,3}
 
 for sampleid in $samplenames
 
