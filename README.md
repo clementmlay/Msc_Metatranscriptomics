@@ -57,5 +57,5 @@ Differential expression
 
 Functional annotation and pathways analysis
 
-`pathways analysis`
+`pathways_Plotting`
 
